@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	enclave "github.com/sanjayrajasekharan/shamir-KMS/enclave-application"
 )
 
 var keyMap = make(map[string]string)
@@ -68,7 +69,7 @@ func injectRootMasterKeyShare(c *gin.Context) {
 // public key whose corresponding private key is only
 // known to the enclave.
 func getEnclaveAttestationDocument(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{})
+	c.JSON(http.StatusOK, gin.H{"enclaveDoc": enclave.GetEnclaveAttestationDocument()})
 }
 
 // Encrypt the provided plaintext key with the
