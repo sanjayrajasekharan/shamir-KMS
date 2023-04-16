@@ -6,6 +6,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var keyMap = make(map[string]string)
+
 type generateRootMasterKeyRequest struct {
 	KeyType     string   `json:"keyType"`
 	KeyID       string   `json:"keyID"`
@@ -61,6 +63,14 @@ func injectRootMasterKeyShare(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, req)
 }
 
+// Return the attestation document of this enclave,
+// which includes the enclave's measurements and a
+// public key whose corresponding private key is only
+// known to the enclave.
+func getEnclaveAttestationDocument(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{})
+}
+
 // Encrypt the provided plaintext key with the
 // specified root master key.
 func encryptWithRootMasterKey(c *gin.Context) {
@@ -88,6 +98,7 @@ func main() {
 	router.POST("/v1/keys/generate", generateRootMasterKey)
 	router.GET("/v1/keys/share/:keyId", getRootMasterKeyShare)
 	router.POST("/v1/keys/inject", injectRootMasterKeyShare)
+	router.GET("/v1/keys/attestationDoc", getEnclaveAttestationDocument)
 	router.POST("/v1/keys/encrypt", encryptWithRootMasterKey)
 	router.POST("/v1/keys/decrypt", decryptWithRootMasterKey)
 
