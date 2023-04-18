@@ -1,14 +1,37 @@
 package enclave
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/x509"
 	"log"
+
+	vaultShamir "github.com/hashicorp/vault/shamir"
+	"github.com/sanjayrajasekharan/shamir-KMS/certificates"
+	cryptoutils "github.com/sanjayrajasekharan/shamir-KMS/crypto-utils"
 )
 
+type KeyType int
+
+const (
+	KeyTypeUnspecified KeyType = 0
+	RSA                        = 1
+	DSA                        = 2
+	AES_256_GCM                = 3
+)
+
+// The enclave application's private key. Kept in enclave memory and used to
+// decrypt received messages.
 var privateKeyBytes []byte
+
+// The enclave application's public key. Shared outside the enclave for clients
+// to use for encrypting messages sent to the enclave.
 var publicKeyDer []byte
+
+// The KMS's root master key. Kept in enclave memory.
+var rootMasterKey []byte
+
+// The different shares of the root master key, held in an in-memory map of
+// keyId -> operatorId -> share.
+var rootMasterKeyShares = make(map[string]map[string][]byte)
 
 // Based on this specification:
 // https://docs.aws.amazon.com/enclaves/latest/user/verify-root.html#doc-def
@@ -26,27 +49,53 @@ type enclaveAttestationDocument struct {
 	PublicKey []byte `json:"publicKey"`
 }
 
-// Generate an RSA encryption key pair held in enclave memory for the
-// lifetime of the enclave application.
-func generateRSAKeyPair() {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		log.Fatalf("Error generating RSA key pair: %v", err)
-	}
+// Calls GenerateAndSplitRootMasterKey with the following params:
+//   - keyId: "rootMasterKey"
+//   - keyType: AES_256_GCM
+//   - k: 3
+//   - operatorCertificates: each of the (parsed) certificates in
+//     certificates/certificates.go
+func GenerateAndSplitRootMasterKeyWithDefaultParams() {
+	keyId := "rootMasterKey"
+	k := 3
+	var operatorCertificates []*x509.Certificate
+	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator1Cert))
+	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator2Cert))
+	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator3Cert))
+	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator4Cert))
+	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator5Cert))
+	GenerateAndSplitRootMasterKey(keyId, AES_256_GCM, k, operatorCertificates)
+}
 
-	privateKeyBytes = x509.MarshalPKCS1PrivateKey(privateKey)
-
-	publicKeyDer, err = x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		log.Fatalf("Error marshaling public key: %v", err)
+// Generates an AES key and splits it into n shares (where n is the length of `operatorCertificates`) such that
+// the split secret can be reconstructed from `k` shares.
+func GenerateAndSplitRootMasterKey(keyId string, keyType KeyType, k int, operatorCertificates []*x509.Certificate) {
+	n := len(operatorCertificates)
+	if n <= k {
+		log.Fatalf("The number of supplied operator identities must be greater than k.")
 	}
+	// TODO: Decide which key type to generate based on `keyType`
+	rootMasterKey = cryptoutils.GenerateAes256Key()
+	shares, err := vaultShamir.Split(rootMasterKey, len(operatorCertificates), k)
+	if err != nil {
+		log.Fatalf("Error splitting key: %v", err)
+	}
+	var sharesMap = make(map[string][]byte)
+	for i := 0; i < n; i++ {
+		operatorCertificate := operatorCertificates[i]
+		// TODO: Encrypt the share with the public key in the certificate
+		sharesMap[operatorCertificate.Subject.CommonName] = shares[i]
+	}
+	rootMasterKeyShares[keyId] = sharesMap
 }
 
 // A placeholder function for returning the enclave's attestation document.
+// Generates an ephemeral key pair and puts the public key in the document
+// while keeping the private key in memory.
 // Should eventually be updated to request an actual attestation document
 // from the AWS Nitro Hypervisor.
 func GetEnclaveAttestationDocument() enclaveAttestationDocument {
-	generateRSAKeyPair()
+	publicKeyDer, privateKeyBytes = cryptoutils.GenerateRSAKeyPair()
 	attestationDoc := enclaveAttestationDocument{
 		PublicKey: publicKeyDer,
 	}

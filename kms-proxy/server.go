@@ -42,6 +42,9 @@ func generateRootMasterKey(c *gin.Context) {
 	if err := c.BindJSON(&req); err != nil {
 		return
 	}
+	// TODO: Update this to use the supplied arguments and call
+	// enclave.GenerateAndSplitRootMasterKey()
+	enclave.GenerateAndSplitRootMasterKeyWithDefaultParams()
 	c.IndentedJSON(http.StatusOK, req)
 }
 
