@@ -10,10 +10,10 @@ import (
 var keyMap = make(map[string]string)
 
 type generateRootMasterKeyRequest struct {
-	KeyType     string   `json:"keyType"`
-	KeyID       string   `json:"keyID"`
-	EngineerIDs []string `json:"engineerIDs"`
-	K           int      `json:"k"`
+	KeyType       string   `json:"keyType"`
+	KeyID         string   `json:"keyID"`
+	EngineerCerts []string `json:"engineerCerts"`
+	K             int      `json:"k"`
 }
 
 type injectRootMasterKeyShareRequest struct {
@@ -29,6 +29,10 @@ type encryptWithRootMasterKeyRequest struct {
 type decryptWithRootMasterKeyRequest struct {
 	KeyID        string `json:"keyID"`
 	EncryptedKey string `json:"encryptedKey"`
+}
+
+type getRootMasterKeyShareRequest struct {
+	Certificate string `json:"certificate"`
 }
 
 // Generate a root master key according to the arguments
@@ -53,7 +57,12 @@ func generateRootMasterKey(c *gin.Context) {
 func getRootMasterKeyShare(c *gin.Context) {
 	// Parse the URL param
 	keyID := c.Param("keyId")
-	c.JSON(http.StatusOK, gin.H{"keyID": keyID})
+	var req getRootMasterKeyShareRequest
+	if err := c.BindJSON(&req); err != nil {
+		return
+	}
+	share := enclave.GetRootMasterKeyShare(keyID, req.Certificate)
+	c.JSON(http.StatusOK, gin.H{"keyID": keyID, "share": share})
 }
 
 // Accept a share of the specified root master key.

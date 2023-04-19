@@ -67,6 +67,28 @@ func GenerateAndSplitRootMasterKeyWithDefaultParams() {
 	GenerateAndSplitRootMasterKey(keyId, AES_256_GCM, k, operatorCertificates)
 }
 
+// Return the root master key share for the specifeid key corresponding to the
+// operator identified in `operatorCertPem`. Return an error if no root master
+// key with ID `keyID` exists, or if there is no share corresponding to the
+// operator identified in `operatorCertPem`
+// TODO: Return error instead of logging and crashing
+// TODO: encrypt share with operator's public key
+func GetRootMasterKeyShare(keyID string, operatorCertPem string) []byte {
+	GenerateAndSplitRootMasterKeyWithDefaultParams()
+	operatorIdToShareMap, exists := rootMasterKeyShares[keyID]
+	if !exists {
+		log.Fatalf("No known key with id: %s", keyID)
+	}
+	operatorCert := cryptoutils.ParsePemEncodedX509Cert(operatorCertPem)
+	// TODO: Validate cert is signed by trusted CA
+	operatorId := operatorCert.Subject.CommonName
+	share, exists := operatorIdToShareMap[operatorId]
+	if !exists {
+		log.Fatalf("Operator identity not in share map: %s", operatorId)
+	}
+	return share
+}
+
 // Generates an AES key and splits it into n shares (where n is the length of `operatorCertificates`) such that
 // the split secret can be reconstructed from `k` shares.
 func GenerateAndSplitRootMasterKey(keyId string, keyType KeyType, k int, operatorCertificates []*x509.Certificate) {
