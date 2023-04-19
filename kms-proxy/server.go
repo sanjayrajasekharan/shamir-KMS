@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -31,10 +32,6 @@ type decryptWithRootMasterKeyRequest struct {
 	EncryptedKey string `json:"encryptedKey"`
 }
 
-type getRootMasterKeyShareRequest struct {
-	Certificate string `json:"certificate"`
-}
-
 // Generate a root master key according to the arguments
 // in the generateRootMasterKeyRequest specified in the
 // request body. The generated key is split into n shares
@@ -57,11 +54,9 @@ func generateRootMasterKey(c *gin.Context) {
 func getRootMasterKeyShare(c *gin.Context) {
 	// Parse the URL param
 	keyID := c.Param("keyId")
-	var req getRootMasterKeyShareRequest
-	if err := c.BindJSON(&req); err != nil {
-		return
-	}
-	share := enclave.GetRootMasterKeyShare(keyID, req.Certificate)
+	operatorCert := c.Request.TLS.PeerCertificates[0]
+
+	share := enclave.GetRootMasterKeyShare(keyID, operatorCert)
 	c.JSON(http.StatusOK, gin.H{"keyID": keyID, "share": share})
 }
 
@@ -115,5 +110,18 @@ func main() {
 	router.POST("/v1/keys/encrypt", encryptWithRootMasterKey)
 	router.POST("/v1/keys/decrypt", decryptWithRootMasterKey)
 
-	router.Run("localhost:8080")
+	tlsConfig := &tls.Config{
+		ClientAuth: tls.RequireAnyClientCert,
+	}
+
+	s := http.Server{
+		Addr:      "localhost:8080",
+		Handler:   router,
+		TLSConfig: tlsConfig,
+	}
+
+	// The certificate in credentials/server-cert.pem is a self-signed cert, so HTTPS
+	// cURL requests to the server can set the `--cacert` flag to a file containing
+	// the same contents as credentials/server-cert.pem.
+	s.ListenAndServeTLS("credentials/server-cert.pem", "credentials/server-key.pem")
 }

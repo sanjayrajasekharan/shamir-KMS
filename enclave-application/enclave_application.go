@@ -73,13 +73,12 @@ func GenerateAndSplitRootMasterKeyWithDefaultParams() {
 // operator identified in `operatorCertPem`
 // TODO: Return error instead of logging and crashing
 // TODO: encrypt share with operator's public key
-func GetRootMasterKeyShare(keyID string, operatorCertPem string) []byte {
+func GetRootMasterKeyShare(keyID string, operatorCert *x509.Certificate) []byte {
 	GenerateAndSplitRootMasterKeyWithDefaultParams()
 	operatorIdToShareMap, exists := rootMasterKeyShares[keyID]
 	if !exists {
 		log.Fatalf("No known key with id: %s", keyID)
 	}
-	operatorCert := cryptoutils.ParsePemEncodedX509Cert(operatorCertPem)
 	// TODO: Validate cert is signed by trusted CA
 	operatorId := operatorCert.Subject.CommonName
 	share, exists := operatorIdToShareMap[operatorId]
