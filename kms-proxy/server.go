@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -41,11 +42,22 @@ func generateRootMasterKey(c *gin.Context) {
 	// Parse the request body
 	var req generateRootMasterKeyRequest
 	if err := c.BindJSON(&req); err != nil {
+		c.Error(err)
 		return
 	}
-	// TODO: Update this to use the supplied arguments and call
-	// enclave.GenerateAndSplitRootMasterKey()
-	enclave.GenerateAndSplitRootMasterKeyWithDefaultParams()
+	var certificates []*x509.Certificate
+	for _, cert := range req.EngineerCerts {
+		parsedCert, err := x509.ParseCertificate([]byte(cert))
+		if err != nil {
+			c.Error(err)
+		}
+		certificates = append(certificates, parsedCert)
+	}
+	err := enclave.GenerateAndSplitRootMasterKey(req.KeyID, req.KeyType, req.K, certificates)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 	c.IndentedJSON(http.StatusOK, req)
 }
 
