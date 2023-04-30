@@ -56,7 +56,7 @@ func GenerateAndSplitRootMasterKeyWithDefaultParams() {
 	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator3Cert))
 	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator4Cert))
 	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator5Cert))
-	GenerateAndSplitRootMasterKey(keyId, "AES_256", k, operatorCertificates)
+	GenerateAndSplitRootMasterKey(keyId, "AES_256_GCM", k, operatorCertificates)
 }
 
 // Return the root master key share for the specifeid key corresponding to the
@@ -88,7 +88,7 @@ func GenerateAndSplitRootMasterKey(keyId string, keyType string, k int, operator
 	if n <= k {
 		return errors.New("The number of supplied operator identities must be greater than k.")
 	}
-	if keyType == "AES_256" {
+	if keyType == "AES_256_GCM" {
 		rootMasterKey = cryptoutils.GenerateAes256Key()
 	} else {
 		return errors.New("Received generation request for unsupported key type")
@@ -119,4 +119,43 @@ func GetEnclaveAttestationDocument() enclaveAttestationDocument {
 	}
 
 	return attestationDoc
+}
+
+func EncryptWithRootMasterKey(message string, keyID string, keyType string) (string, error) {
+	GenerateAndSplitRootMasterKeyWithDefaultParams()
+	// TODO: Look up the key to use from a map based on keyID
+	key := rootMasterKey
+	if keyType == "AES_256_GCM" {
+		return encryptWithRootMasterKeyAes256Gcm(message, key)
+	} else {
+		return "", errors.New(fmt.Sprintf("Received encryption request with unsupported key type specified: %s", keyType))
+	}
+}
+
+func DecryptWithRootMasterKey(message string, keyID string, keyType string) (string, error) {
+	GenerateAndSplitRootMasterKeyWithDefaultParams()
+	// TODO: Look up the key to use from a map based on keyID
+	key := rootMasterKey
+	if keyType == "AES_256_GCM" {
+		return decryptWithRootMasterKeyAes256Gcm(message, key)
+	} else {
+		return "", errors.New(fmt.Sprintf("Received decryption request with unsupported key type specified: %s", keyType))
+	}
+}
+
+func encryptWithRootMasterKeyAes256Gcm(message string, rootMasterKey []byte) (string, error) {
+	// TODO: Decrypt message using enclave private key (We assume
+	// incoming messages that require confidentiality are encrypted
+	// with the public key)
+	messageBytes := []byte(message)
+	ciphertextBytes, err := cryptoutils.EncryptAes256Gcm(rootMasterKey, messageBytes)
+	return string(ciphertextBytes), err
+}
+
+func decryptWithRootMasterKeyAes256Gcm(ciphertext string, rootMasterKey []byte) (string, error) {
+	// TODO: Do we need to encrypt a decrypt message with the enclave public key? Maybe it's easier to
+	// just assume every incoming message is encrypted
+	ciphertextBytes := []byte(ciphertext)
+	plaintextBytes, err := cryptoutils.DecryptAes256Gcm(rootMasterKey, ciphertextBytes)
+	return string(plaintextBytes), err
 }

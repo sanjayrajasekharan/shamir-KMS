@@ -1,10 +1,14 @@
 package cryptoutils
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
+	"io"
 	"log"
 )
 
@@ -16,6 +20,45 @@ func GenerateAes256Key() []byte {
 		log.Fatalf("Error generating random AES key: %v", err)
 	}
 	return key
+}
+
+func EncryptAes256Gcm(key []byte, message []byte) ([]byte, error) {
+	c, err := aes.NewCipher(key)
+	if err != nil {
+		return []byte(""), err
+	}
+	gcm, err := cipher.NewGCM(c)
+	if err != nil {
+		return []byte(""), err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		return []byte(""), err
+	}
+	return gcm.Seal(nonce, nonce, message /*additionalData=*/, nil), nil
+}
+
+func DecryptAes256Gcm(key []byte, ciphertext []byte) ([]byte, error) {
+	c, err := aes.NewCipher(key)
+	if err != nil {
+		return []byte(""), err
+	}
+	gcm, err := cipher.NewGCM(c)
+	if err != nil {
+		return []byte(""), err
+	}
+
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return []byte(""), errors.New("Ciphertext smaller than nonce.")
+	}
+
+	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return []byte(""), err
+	}
+	return plaintext, nil
 }
 
 // Generate an RSA encryption key pair, returned as a

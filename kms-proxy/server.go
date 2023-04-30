@@ -24,13 +24,15 @@ type injectRootMasterKeyShareRequest struct {
 }
 
 type encryptWithRootMasterKeyRequest struct {
-	KeyID        string `json:"keyID"`
-	PlaintextKey string `json:"plaintextKey"`
+	KeyID   string `json:"keyID"`
+	KeyType string `json:"keyType"`
+	Message string `json:"message"`
 }
 
 type decryptWithRootMasterKeyRequest struct {
-	KeyID        string `json:"keyID"`
-	EncryptedKey string `json:"encryptedKey"`
+	KeyID      string `json:"keyID"`
+	KeyType    string `json:"keyType"`
+	Ciphertext string `json:"ciphertetx"`
 }
 
 // Generate a root master key according to the arguments
@@ -57,7 +59,7 @@ func generateRootMasterKey(c *gin.Context) {
 	if err != nil {
 		c.Error(err)
 	}
-	c.IndentedJSON(http.StatusOK, req)
+	c.IndentedJSON(http.StatusOK, gin.H{})
 
 }
 
@@ -104,7 +106,12 @@ func encryptWithRootMasterKey(c *gin.Context) {
 	if err := c.BindJSON(&req); err != nil {
 		return
 	}
-	c.IndentedJSON(http.StatusOK, req)
+	ciphertext, err := enclave.EncryptWithRootMasterKey(req.Message, req.KeyID, req.KeyType)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.IndentedJSON(http.StatusOK, gin.H{"ciphertext": ciphertext})
 }
 
 // Decrypt the provided plaintext key with the
@@ -115,7 +122,12 @@ func decryptWithRootMasterKey(c *gin.Context) {
 	if err := c.BindJSON(&req); err != nil {
 		return
 	}
-	c.IndentedJSON(http.StatusOK, req)
+	plaintext, err := enclave.DecryptWithRootMasterKey(req.Ciphertext, req.KeyID, req.KeyType)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	c.IndentedJSON(http.StatusOK, gin.H{"plaintext": plaintext})
 }
 
 func main() {
