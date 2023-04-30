@@ -32,7 +32,7 @@ type encryptWithRootMasterKeyRequest struct {
 type decryptWithRootMasterKeyRequest struct {
 	KeyID      string `json:"keyID"`
 	KeyType    string `json:"keyType"`
-	Ciphertext string `json:"ciphertetx"`
+	Ciphertext string `json:"ciphertext"`
 }
 
 // Generate a root master key according to the arguments
