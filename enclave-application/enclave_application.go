@@ -2,20 +2,12 @@ package enclave
 
 import (
 	"crypto/x509"
+	"errors"
 	"log"
 
 	vaultShamir "github.com/hashicorp/vault/shamir"
 	"github.com/sanjayrajasekharan/shamir-KMS/certificates"
 	cryptoutils "github.com/sanjayrajasekharan/shamir-KMS/crypto-utils"
-)
-
-type KeyType int
-
-const (
-	KeyTypeUnspecified KeyType = 0
-	RSA                        = 1
-	DSA                        = 2
-	AES_256_GCM                = 3
 )
 
 // The enclave application's private key. Kept in enclave memory and used to
@@ -64,7 +56,7 @@ func GenerateAndSplitRootMasterKeyWithDefaultParams() {
 	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator3Cert))
 	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator4Cert))
 	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator5Cert))
-	GenerateAndSplitRootMasterKey(keyId, AES_256_GCM, k, operatorCertificates)
+	GenerateAndSplitRootMasterKey(keyId, "AES_256", k, operatorCertificates)
 }
 
 // Return the root master key share for the specifeid key corresponding to the
@@ -88,18 +80,22 @@ func GetRootMasterKeyShare(keyID string, operatorCert *x509.Certificate) []byte 
 	return share
 }
 
-// Generates an AES key and splits it into n shares (where n is the length of `operatorCertificates`) such that
+// Generates a key of type `keyType` and splits it into n shares (where n is the length of `operatorCertificates`) such that
 // the split secret can be reconstructed from `k` shares.
-func GenerateAndSplitRootMasterKey(keyId string, keyType KeyType, k int, operatorCertificates []*x509.Certificate) {
+func GenerateAndSplitRootMasterKey(keyId string, keyType string, k int, operatorCertificates []*x509.Certificate) error {
 	n := len(operatorCertificates)
 	if n <= k {
-		log.Fatalf("The number of supplied operator identities must be greater than k.")
+		return errors.New("The number of supplied operator identities must be greater than k.")
 	}
-	// TODO: Decide which key type to generate based on `keyType`
-	rootMasterKey = cryptoutils.GenerateAes256Key()
+	if keyType == "AES_256" {
+		rootMasterKey = cryptoutils.GenerateAes256Key()
+	} else {
+		return errors.New("Received generation request for unsupported key type")
+	}
+
 	shares, err := vaultShamir.Split(rootMasterKey, len(operatorCertificates), k)
 	if err != nil {
-		log.Fatalf("Error splitting key: %v", err)
+		return err
 	}
 	var sharesMap = make(map[string][]byte)
 	for i := 0; i < n; i++ {
@@ -108,6 +104,7 @@ func GenerateAndSplitRootMasterKey(keyId string, keyType KeyType, k int, operato
 		sharesMap[operatorCertificate.Subject.CommonName] = shares[i]
 	}
 	rootMasterKeyShares[keyId] = sharesMap
+	return nil
 }
 
 // A placeholder function for returning the enclave's attestation document.
