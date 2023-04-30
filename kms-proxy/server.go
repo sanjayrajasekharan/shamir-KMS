@@ -25,13 +25,11 @@ type injectRootMasterKeyShareRequest struct {
 
 type encryptWithRootMasterKeyRequest struct {
 	KeyID   string `json:"keyID"`
-	KeyType string `json:"keyType"`
 	Message string `json:"message"`
 }
 
 type decryptWithRootMasterKeyRequest struct {
 	KeyID      string `json:"keyID"`
-	KeyType    string `json:"keyType"`
 	Ciphertext string `json:"ciphertext"`
 }
 
@@ -86,8 +84,13 @@ func injectRootMasterKeyShare(c *gin.Context) {
 	if err := c.BindJSON(&req); err != nil {
 		return
 	}
+	err := enclave.InjectRootMasterKeyShare(req.KeyID, req.KeyShare, c.Request.TLS.PeerCertificates[0])
+	if err != nil {
+		c.Error(err)
+		return
+	}
 
-	c.IndentedJSON(http.StatusOK, req)
+	c.IndentedJSON(http.StatusOK, gin.H{})
 }
 
 // Return the attestation document of this enclave,
@@ -106,7 +109,7 @@ func encryptWithRootMasterKey(c *gin.Context) {
 	if err := c.BindJSON(&req); err != nil {
 		return
 	}
-	ciphertext, err := enclave.EncryptWithRootMasterKey(req.Message, req.KeyID, req.KeyType)
+	ciphertext, err := enclave.EncryptWithRootMasterKey(req.Message, req.KeyID)
 	if err != nil {
 		c.Error(err)
 		return
@@ -122,7 +125,7 @@ func decryptWithRootMasterKey(c *gin.Context) {
 	if err := c.BindJSON(&req); err != nil {
 		return
 	}
-	plaintext, err := enclave.DecryptWithRootMasterKey(req.Ciphertext, req.KeyID, req.KeyType)
+	plaintext, err := enclave.DecryptWithRootMasterKey(req.Ciphertext, req.KeyID)
 	if err != nil {
 		c.Error(err)
 		return

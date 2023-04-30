@@ -4,6 +4,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"log"
 
 	vaultShamir "github.com/hashicorp/vault/shamir"
 	"github.com/sanjayrajasekharan/shamir-KMS/certificates"
@@ -24,6 +25,15 @@ var rootMasterKey []byte
 // The different shares of the root master key, held in an in-memory map of
 // keyId -> operatorId -> share.
 var rootMasterKeyShares = make(map[string]map[string][]byte)
+
+type rootMasterKeyParamValues struct {
+	N       int    `json:"n"`
+	K       int    `json:"l"`
+	KeyType string `json:"keyType"`
+}
+
+// A map from a root master key ID to the parameters configured for that key
+var rootMasterKeyParams = make(map[string]rootMasterKeyParamValues)
 
 // Based on this specification:
 // https://docs.aws.amazon.com/enclaves/latest/user/verify-root.html#doc-def
@@ -104,6 +114,11 @@ func GenerateAndSplitRootMasterKey(keyId string, keyType string, k int, operator
 		sharesMap[operatorCertificate.Subject.CommonName] = shares[i]
 	}
 	rootMasterKeyShares[keyId] = sharesMap
+	rootMasterKeyParams[keyId] = rootMasterKeyParamValues{
+		K:       k,
+		N:       n,
+		KeyType: keyType,
+	}
 	return nil
 }
 
@@ -121,25 +136,27 @@ func GetEnclaveAttestationDocument() enclaveAttestationDocument {
 	return attestationDoc
 }
 
-func EncryptWithRootMasterKey(message string, keyID string, keyType string) (string, error) {
+func EncryptWithRootMasterKey(message string, keyID string) (string, error) {
 	GenerateAndSplitRootMasterKeyWithDefaultParams()
 	// TODO: Look up the key to use from a map based on keyID
 	key := rootMasterKey
+	keyType := rootMasterKeyParams[keyID].KeyType
 	if keyType == "AES_256_GCM" {
 		return encryptWithRootMasterKeyAes256Gcm(message, key)
 	} else {
-		return "", errors.New(fmt.Sprintf("Received encryption request with unsupported key type specified: %s", keyType))
+		return "", errors.New(fmt.Sprintf("The specified root master key, %s, does not have a supported key type: %s", keyID, keyType))
 	}
 }
 
-func DecryptWithRootMasterKey(message string, keyID string, keyType string) (string, error) {
+func DecryptWithRootMasterKey(message string, keyID string) (string, error) {
 	GenerateAndSplitRootMasterKeyWithDefaultParams()
 	// TODO: Look up the key to use from a map based on keyID
 	key := rootMasterKey
+	keyType := rootMasterKeyParams[keyID].KeyType
 	if keyType == "AES_256_GCM" {
 		return decryptWithRootMasterKeyAes256Gcm(message, key)
 	} else {
-		return "", errors.New(fmt.Sprintf("Received decryption request with unsupported key type specified: %s", keyType))
+		return "", errors.New(fmt.Sprintf("The specified root master key, %s, does not have a supported key type: %s", keyID, keyType))
 	}
 }
 
@@ -158,4 +175,32 @@ func decryptWithRootMasterKeyAes256Gcm(ciphertext string, rootMasterKey []byte) 
 	ciphertextBytes := []byte(ciphertext)
 	plaintextBytes, err := cryptoutils.DecryptAes256Gcm(rootMasterKey, ciphertextBytes)
 	return string(plaintextBytes), err
+}
+
+// TODO: Since this file is currently just a library, and not a separate application, it doesn't
+// actually hold anything in memory. We should figure out how we want this to work for the non-enclave
+// case (set up a separate Gin server?)
+func InjectRootMasterKeyShare(keyID string, keyShare string, operatorCertificate *x509.Certificate) error {
+	// TODO: Check that the operator identified by operatorCertificate is authorized to inject a key share
+	// TODO: Decrypt keyShare with enclave private key
+	if rootMasterKeyShares[keyID] == nil {
+		rootMasterKeyShares[keyID] = make(map[string][]byte)
+	}
+	rootMasterKeyShares[keyID][operatorCertificate.Subject.CommonName] = []byte(keyShare)
+	log.Printf("Stored share from operator \"%s\"", operatorCertificate.Subject.CommonName)
+	shares := make([][]byte, 0, len(rootMasterKeyShares[keyID]))
+	for operatorName := range rootMasterKeyShares[keyID] {
+		shares = append(shares, rootMasterKeyShares[keyID][operatorName])
+	}
+	// Attempt to reconstruct the root master key if we have at least k shares
+	if len(rootMasterKey) == 0 && len(shares) >= rootMasterKeyParams[keyID].K {
+		log.Print("Attempting to reconstruct root master key...")
+		combinedKey, err := vaultShamir.Combine(shares)
+		if err != nil {
+			return err
+		}
+		rootMasterKey = combinedKey
+		log.Print("Successfully reconstructed root master key.")
+	}
+	return nil
 }
