@@ -56,9 +56,9 @@ func generateRootMasterKey(c *gin.Context) {
 	err := enclave.GenerateAndSplitRootMasterKey(req.KeyID, req.KeyType, req.K, certificates)
 	if err != nil {
 		c.Error(err)
-		return
 	}
 	c.IndentedJSON(http.StatusOK, req)
+
 }
 
 // Return a share of the specified root master key
@@ -68,8 +68,13 @@ func getRootMasterKeyShare(c *gin.Context) {
 	keyID := c.Param("keyId")
 	operatorCert := c.Request.TLS.PeerCertificates[0]
 
-	share := enclave.GetRootMasterKeyShare(keyID, operatorCert)
+	share, err := enclave.GetRootMasterKeyShare(keyID, operatorCert)
+	if err != nil {
+		c.Error(err)
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"keyID": keyID, "share": share})
+
 }
 
 // Accept a share of the specified root master key.

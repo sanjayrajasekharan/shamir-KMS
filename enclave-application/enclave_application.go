@@ -3,7 +3,7 @@ package enclave
 import (
 	"crypto/x509"
 	"errors"
-	"log"
+	"fmt"
 
 	vaultShamir "github.com/hashicorp/vault/shamir"
 	"github.com/sanjayrajasekharan/shamir-KMS/certificates"
@@ -65,19 +65,20 @@ func GenerateAndSplitRootMasterKeyWithDefaultParams() {
 // operator identified in `operatorCertPem`
 // TODO: Return error instead of logging and crashing
 // TODO: encrypt share with operator's public key
-func GetRootMasterKeyShare(keyID string, operatorCert *x509.Certificate) []byte {
+func GetRootMasterKeyShare(keyID string, operatorCert *x509.Certificate) ([]byte, error) {
 	GenerateAndSplitRootMasterKeyWithDefaultParams()
 	operatorIdToShareMap, exists := rootMasterKeyShares[keyID]
 	if !exists {
-		log.Fatalf("No known key with id: %s", keyID)
+		return []byte(""), errors.New(fmt.Sprintf("No known key with id: %s", keyID))
 	}
 	// TODO: Validate cert is signed by trusted CA
 	operatorId := operatorCert.Subject.CommonName
 	share, exists := operatorIdToShareMap[operatorId]
 	if !exists {
-		log.Fatalf("Operator identity not in share map: %s", operatorId)
+		return []byte(""), errors.New(fmt.Sprintf("Operator identity not in share map: %s", operatorId))
 	}
-	return share
+	// TODO: Encrypt share with operator public key
+	return share, nil
 }
 
 // Generates a key of type `keyType` and splits it into n shares (where n is the length of `operatorCertificates`) such that
@@ -100,7 +101,6 @@ func GenerateAndSplitRootMasterKey(keyId string, keyType string, k int, operator
 	var sharesMap = make(map[string][]byte)
 	for i := 0; i < n; i++ {
 		operatorCertificate := operatorCertificates[i]
-		// TODO: Encrypt the share with the public key in the certificate
 		sharesMap[operatorCertificate.Subject.CommonName] = shares[i]
 	}
 	rootMasterKeyShares[keyId] = sharesMap
