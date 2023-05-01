@@ -204,3 +204,11 @@ func InjectRootMasterKeyShare(keyID string, keyShare string, operatorCertificate
 	}
 	return nil
 }
+
+// Operations the enclave application should perform on startup
+func Startup() {
+	// TODO: Implement
+	//		1. Read root master key parameters from local file
+	//		2. Generate private/public keypair
+	//		3. Get attestation document
+}
