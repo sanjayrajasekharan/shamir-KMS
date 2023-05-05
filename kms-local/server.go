@@ -11,7 +11,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	vaultShamir "github.com/hashicorp/vault/shamir"
-	"github.com/sanjayrajasekharan/shamir-KMS/certificates"
 	cryptoutils "github.com/sanjayrajasekharan/shamir-KMS/crypto-utils"
 )
 
@@ -23,6 +22,9 @@ var privateKeyBytes []byte
 // The enclave application's public key. Shared outside the enclave for clients
 // to use for encrypting messages sent to the enclave.
 var publicKeyDer []byte
+
+// Whether or not the KMS has a root master key in memory
+var hasRootMasterKey = false
 
 // The KMS's root master key. Kept in enclave memory.
 var rootMasterKey []byte
@@ -56,31 +58,12 @@ type enclaveAttestationDocument struct {
 	PublicKey []byte `json:"publicKey"`
 }
 
-// Calls GenerateAndSplitRootMasterKey with the following params:
-//   - keyId: "rootMasterKey"
-//   - keyType: AES_256_GCM
-//   - k: 3
-//   - operatorCertificates: each of the (parsed) certificates in
-//     certificates/certificates.go
-func enclave_GenerateAndSplitRootMasterKeyWithDefaultParams() {
-	keyId := "rootMasterKey"
-	k := 3
-	var operatorCertificates []*x509.Certificate
-	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator1Cert))
-	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator2Cert))
-	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator3Cert))
-	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator4Cert))
-	operatorCertificates = append(operatorCertificates, cryptoutils.ParsePemEncodedX509Cert(certificates.Operator5Cert))
-	enclave_GenerateAndSplitRootMasterKey(keyId, "AES_256_GCM", k, operatorCertificates)
-}
-
 // Return the root master key share for the specifeid key corresponding to the
 // operator identified in `operatorCertPem`. Return an error if no root master
 // key with ID `keyID` exists, or if there is no share corresponding to the
 // operator identified in `operatorCertPem`
 // TODO: encrypt share with operator's public key
 func enclave_GetRootMasterKeyShare(keyID string, operatorCert *x509.Certificate) ([]byte, error) {
-	enclave_GenerateAndSplitRootMasterKeyWithDefaultParams()
 	operatorIdToShareMap, exists := rootMasterKeyShares[keyID]
 	if !exists {
 		return []byte(""), errors.New(fmt.Sprintf("No known key with id: %s", keyID))
@@ -102,13 +85,15 @@ func enclave_GenerateAndSplitRootMasterKey(keyId string, keyType string, k int, 
 	if n <= k {
 		return errors.New("The number of supplied operator identities must be greater than k.")
 	}
+	log.Printf("Received generation request with Shamir parameters n=%v, k=%v", n, k)
 	if keyType == "AES_256_GCM" {
 		rootMasterKey = cryptoutils.GenerateAes256Key()
+		hasRootMasterKey = true
 	} else {
 		return errors.New("Received generation request for unsupported key type")
 	}
 
-	shares, err := vaultShamir.Split(rootMasterKey, len(operatorCertificates), k)
+	shares, err := vaultShamir.Split(rootMasterKey, n, k)
 	if err != nil {
 		return err
 	}
@@ -141,7 +126,6 @@ func enclave_GetEnclaveAttestationDocument() enclaveAttestationDocument {
 }
 
 func enclave_EncryptWithRootMasterKey(message string, keyID string) (string, error) {
-	enclave_GenerateAndSplitRootMasterKeyWithDefaultParams()
 	// TODO: Look up the key to use from a map based on keyID
 	key := rootMasterKey
 	keyType := rootMasterKeyParams[keyID].KeyType
@@ -153,7 +137,6 @@ func enclave_EncryptWithRootMasterKey(message string, keyID string) (string, err
 }
 
 func enclave_DecryptWithRootMasterKey(message string, keyID string) (string, error) {
-	enclave_GenerateAndSplitRootMasterKeyWithDefaultParams()
 	// TODO: Look up the key to use from a map based on keyID
 	key := rootMasterKey
 	keyType := rootMasterKeyParams[keyID].KeyType
@@ -181,9 +164,6 @@ func enclave_decryptWithRootMasterKeyAes256Gcm(ciphertext string, rootMasterKey 
 	return string(plaintextBytes), err
 }
 
-// TODO: Since this file is currently just a library, and not a separate application, it doesn't
-// actually hold anything in memory. We should figure out how we want this to work for the non-enclave
-// case (set up a separate Gin server?)
 func enclave_InjectRootMasterKeyShare(keyID string, keyShare string, operatorCertificate *x509.Certificate) error {
 	// TODO: Check that the operator identified by operatorCertificate is authorized to inject a key share
 	// TODO: Decrypt keyShare with enclave private key
@@ -196,14 +176,20 @@ func enclave_InjectRootMasterKeyShare(keyID string, keyShare string, operatorCer
 	for operatorName := range rootMasterKeyShares[keyID] {
 		shares = append(shares, rootMasterKeyShares[keyID][operatorName])
 	}
+	log.Printf("Current shares: %v", shares)
 	// Attempt to reconstruct the root master key if we have at least k shares
-	if len(rootMasterKey) == 0 && len(shares) >= rootMasterKeyParams[keyID].K {
+	if !hasRootMasterKey && len(shares) >= rootMasterKeyParams[keyID].K {
 		log.Print("Attempting to reconstruct root master key...")
+		log.Printf("Stored k is %v", rootMasterKeyParams[keyID].K)
+		log.Printf("Len shares is %v", len(shares))
+		log.Printf("hasRootMasterKey is %v", hasRootMasterKey)
 		combinedKey, err := vaultShamir.Combine(shares)
 		if err != nil {
 			return err
 		}
 		rootMasterKey = combinedKey
+		log.Printf("Reconstructed master key: %v", combinedKey)
+		hasRootMasterKey = true
 		log.Print("Successfully reconstructed root master key.")
 	}
 	return nil
