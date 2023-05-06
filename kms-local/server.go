@@ -40,6 +40,8 @@ var rootMasterKeyMap = make(map[string][]byte)
 // keyId -> operatorId -> share.
 var rootMasterKeyShares = make(map[string]map[string][]byte)
 
+var enableEncryption = false
+
 type rootMasterKeyParamValues struct {
 	N                   int      `json:"n"`
 	K                   int      `json:"k"`
@@ -96,7 +98,6 @@ func enclave_decryptWithRootMasterKeyAes256Gcm(ciphertext string, rootMasterKey 
 // operator identified in `operatorCertPem`. Return an error if no root master
 // key with ID `keyID` exists, or if there is no share corresponding to the
 // operator identified in `operatorCertPem`
-// TODO: encrypt share with operator's public key
 func enclave_GetRootMasterKeyShare(keyID string, operatorCert *x509.Certificate) ([]byte, error) {
 	operatorIdToShareMap, exists := rootMasterKeyShares[keyID]
 	if !exists {
@@ -108,7 +109,10 @@ func enclave_GetRootMasterKeyShare(keyID string, operatorCert *x509.Certificate)
 	if !exists {
 		return []byte(""), errors.New(fmt.Sprintf("Operator identity not in share map: %s", operatorId))
 	}
-	// TODO: Encrypt share with operator public key
+	operatorPublicKey := operatorCert.PublicKey.(*rsa.PublicKey)
+	if enableEncryption {
+		return cryptoutils.EncryptWithPublicKey(share, operatorPublicKey), nil
+	}
 	return share, nil
 }
 
@@ -184,7 +188,8 @@ func enclave_DecryptWithRootMasterKey(message string, keyID string) (string, err
 	key := rootMasterKeyMap[keyID]
 	keyType := rootMasterKeyParams[keyID].KeyType
 	if keyType == "AES_256_GCM" {
-		return enclave_decryptWithRootMasterKeyAes256Gcm(message, key)
+		plaintext, err := enclave_decryptWithRootMasterKeyAes256Gcm(message, key)
+		return plaintext, err
 	} else {
 		return "", errors.New(fmt.Sprintf("The specified root master key, %s, does not have a supported key type: %s", keyID, keyType))
 	}

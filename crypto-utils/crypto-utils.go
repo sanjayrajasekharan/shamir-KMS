@@ -26,6 +26,26 @@ func GenerateAes256Key() []byte {
 	return key
 }
 
+func EncryptWithPublicKey(message []byte, serverPublicKey *rsa.PublicKey) []byte {
+	ciphertext, err := rsa.EncryptPKCS1v15(rand.Reader, serverPublicKey, message)
+	if err != nil {
+		log.Fatalf("Failed to encrypt share with server's public key: %v", err.Error())
+	}
+	return ciphertext
+}
+
+// func DecryptWithPrivateKey(ciphertext []byte) []byte {
+// 	privateKey, err := cryptoutils.LoadPrivateKey(*clientKeyFile)
+// 	if err != nil {
+// 		log.Fatalf("Error loading client private key: %v", err.Error())
+// 	}
+// 	plaintext, err := rsa.DecryptPKCS1v15(rand.Reader, privateKey, ciphertext)
+// 	if err != nil {
+// 		log.Fatalf("Error decrypting share from server: %v", err.Error())
+// 	}
+// 	return plaintext
+// }
+
 func EncryptAes256Gcm(key []byte, message []byte) ([]byte, error) {
 	c, err := aes.NewCipher(key)
 	if err != nil {
