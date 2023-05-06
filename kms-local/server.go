@@ -172,9 +172,11 @@ func enclave_GetEnclaveAttestationDocument() enclaveAttestationDocument {
 }
 
 func enclave_EncryptWithRootMasterKey(message string, keyID string) (string, error) {
-	// TODO: Look up the key to use from a map based on keyID
 	key := rootMasterKeyMap[keyID]
 	keyType := rootMasterKeyParams[keyID].KeyType
+	if enableEncryption {
+		message = string(cryptoutils.DecryptWithPrivateKey([]byte(message), privateKeyRsa))
+	}
 	if keyType == "AES_256_GCM" {
 		return enclave_encryptWithRootMasterKeyAes256Gcm(message, key)
 	} else {
@@ -199,7 +201,6 @@ func enclave_DecryptWithRootMasterKey(message string, keyID string, operatorCert
 }
 
 func enclave_InjectRootMasterKeyShare(keyID string, keyShare string, operatorCertificate *x509.Certificate) error {
-	// TODO: Decrypt keyShare with enclave private key
 	params := rootMasterKeyParams[keyID]
 	operatorCommonName := operatorCertificate.Subject.CommonName
 	if !contains(operatorCommonName, params.AuthorizedOperators) {
@@ -208,7 +209,12 @@ func enclave_InjectRootMasterKeyShare(keyID string, keyShare string, operatorCer
 	if rootMasterKeyShares[keyID] == nil {
 		rootMasterKeyShares[keyID] = make(map[string][]byte)
 	}
-	rootMasterKeyShares[keyID][operatorCommonName] = []byte(keyShare)
+	if !enableEncryption {
+		rootMasterKeyShares[keyID][operatorCommonName] = []byte(keyShare)
+	} else {
+		rootMasterKeyShares[keyID][operatorCommonName] = cryptoutils.DecryptWithPrivateKey([]byte(keyShare), privateKeyRsa)
+	}
+
 	log.Printf("Stored share from operator \"%s\"", operatorCommonName)
 	shares := make([][]byte, 0, len(rootMasterKeyShares[keyID]))
 	for operatorName := range rootMasterKeyShares[keyID] {

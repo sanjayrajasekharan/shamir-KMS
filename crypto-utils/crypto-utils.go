@@ -34,17 +34,13 @@ func EncryptWithPublicKey(message []byte, serverPublicKey *rsa.PublicKey) []byte
 	return ciphertext
 }
 
-// func DecryptWithPrivateKey(ciphertext []byte) []byte {
-// 	privateKey, err := cryptoutils.LoadPrivateKey(*clientKeyFile)
-// 	if err != nil {
-// 		log.Fatalf("Error loading client private key: %v", err.Error())
-// 	}
-// 	plaintext, err := rsa.DecryptPKCS1v15(rand.Reader, privateKey, ciphertext)
-// 	if err != nil {
-// 		log.Fatalf("Error decrypting share from server: %v", err.Error())
-// 	}
-// 	return plaintext
-// }
+func DecryptWithPrivateKey(ciphertext []byte, privateKey *rsa.PrivateKey) []byte {
+	plaintext, err := rsa.DecryptPKCS1v15(rand.Reader, privateKey, ciphertext)
+	if err != nil {
+		log.Fatalf("Error decrypting with private key: %v", err.Error())
+	}
+	return plaintext
+}
 
 func EncryptAes256Gcm(key []byte, message []byte) ([]byte, error) {
 	c, err := aes.NewCipher(key)
