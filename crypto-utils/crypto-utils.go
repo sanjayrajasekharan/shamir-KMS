@@ -1,6 +1,7 @@
 package cryptoutils
 
 import (
+	"bufio"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -8,8 +9,11 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
+	"os"
 )
 
 // Generate a 256-bit AES key.
@@ -90,4 +94,33 @@ func ParsePemEncodedX509Cert(pemEncodedCert string) *x509.Certificate {
 		log.Fatalf("Error parsing certificate: %v", err)
 	}
 	return cert
+}
+
+func LoadPublicKey(certFilePath string) (*rsa.PublicKey, error) {
+	certFile, err := os.Open(certFilePath)
+	if err != nil {
+		return nil, err
+	}
+
+	certPem, err := ioutil.ReadAll(certFile)
+	block, _ := pem.Decode(certPem)
+	cert, err := x509.ParseCertificate(block.Bytes)
+	publicKeyRsa := cert.PublicKey.(*rsa.PublicKey)
+	return publicKeyRsa, nil
+}
+
+func LoadPrivateKey(privateKeyFilePath string) (*rsa.PrivateKey, error) {
+	privateKeyFile, err := os.Open(privateKeyFilePath)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	pemfileinfo, _ := privateKeyFile.Stat()
+	var size int64 = pemfileinfo.Size()
+	pembytes := make([]byte, size)
+	buffer := bufio.NewReader(privateKeyFile)
+	_, err = buffer.Read(pembytes)
+	data, _ := pem.Decode([]byte(pembytes))
+	privateKeyFile.Close()
+	return x509.ParsePKCS1PrivateKey(data.Bytes)
 }

@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -13,6 +15,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	cryptoutils "github.com/sanjayrajasekharan/shamir-KMS/crypto-utils"
 )
 
 func ProcessHttpResponse(resp *http.Response, err error) {
@@ -34,6 +38,8 @@ func ProcessHttpResponse(resp *http.Response, err error) {
 	fmt.Printf("\nResponse from server: \n\tHTTP status: %s\n\tBody: %s\n", resp.Status, body)
 }
 
+// Request from client body: {keyID: <plaintext>, keyType: <plaintext>, engineerCerts: <plaintext>, k:<plaintext>}
+// Response from server body: {}
 func MakeGenerateRootMasterKeyRequest(client http.Client, serverAddress string, keyID string, keyType string, engineerCerts []string, k int) {
 	postBody := map[string]any{"keyType": keyType, "keyID": keyID, "engineerCerts": engineerCerts, "k": k}
 	postBodyJson, err := json.Marshal(postBody)
@@ -41,24 +47,33 @@ func MakeGenerateRootMasterKeyRequest(client http.Client, serverAddress string, 
 	ProcessHttpResponse(resp, err)
 }
 
+// Request from client body: {}
+// Response from server body: {"keyID": <plaintext>, "share": <ciphertext>}
 func MakeGetRootMasterKeyShareRequest(client http.Client, serverAddress string, keyID string) {
 	resp, err := client.Get(fmt.Sprintf("https://%s/v1/keys/share/%s", serverAddress, keyID))
 	ProcessHttpResponse(resp, err)
 }
 
-func MakeInjectRootMasterKeyShareRequest(client http.Client, serverAddress string, keyID string, share string) {
-	postBody := map[string]any{"keyID": keyID, "keyShare": share}
+// Request from client body: {keyID: <plaintext>, share: <ciphertext>}
+// Response from server body: {}
+func MakeInjectRootMasterKeyShareRequest(client http.Client, serverAddress string, keyID string, encryptedShare string) {
+	postBody := map[string]any{"keyID": keyID, "keyShare": encryptedShare}
 	postBodyJson, err := json.Marshal(postBody)
 	resp, err := client.Post(fmt.Sprintf("https://%s/v1/keys/inject", serverAddress), "application/json", bytes.NewBuffer(postBodyJson))
 	ProcessHttpResponse(resp, err)
 }
 
+// Request from client body: {keyID: <plaintext>, message: <ciphertext>}
+// Response from server body: {ciphertext: <plaintext>}
 func MakeEncryptRequest(client http.Client, serverAddress string, keyID string, message string) {
 	postBody := map[string]any{"keyID": keyID, "message": message}
 	postBodyJson, err := json.Marshal(postBody)
 	resp, err := client.Post(fmt.Sprintf("https://%s/v1/keys/encrypt", serverAddress), "application/json", bytes.NewBuffer(postBodyJson))
 	ProcessHttpResponse(resp, err)
 }
+
+// Request from client body: {keyID: <plaintext>, ciphertext: <plaintext>}
+// Response from server body: {plaintext: <ciphertext>>}
 func MakeDecryptRequest(client http.Client, serverAddress string, keyID string, ciphertext string) {
 	postBody := map[string]any{"keyID": keyID, "ciphertext": ciphertext}
 	postBodyJson, err := json.Marshal(postBody)
@@ -72,6 +87,7 @@ func main() {
 	srvhost := flag.String("srvhost", "localhost", "The server's host name")
 	srvport := flag.String("srvport", "8080", "Required, the server's port.")
 	caCertFile := flag.String("cacert", "", "Required, the name of the CA that signed the server's certificate")
+	serverCertFile := flag.String("servercert", "", "Required, the server's certificate")
 	clientCertFile := flag.String("clientcert", "", "Required, the name of the client's certificate file")
 	clientKeyFile := flag.String("clientkey", "", "Required, the file name of the clients's private key file")
 	method := flag.String("method", "", "Required, the RPC being invoked on the server. Must be one of GenerateRootMasterKey, GetRootMasterKeyShare, InhectRootMasterKeyShare, Encrypt, Decrypt")
@@ -83,6 +99,7 @@ func main() {
 	operatorCerts := flag.String("operatorcerts", "", "Optional. Comma separated list of filepaths to operator certificates")
 	k := flag.Int("k", 0, "Optional.")
 	keyType := flag.String("keytype", "", "Optional")
+	enableEncryption := flag.Bool("encryption", false, "Whether or not to encrypt/decrypt messages between server and client (in addition to TLS)")
 	flag.Parse()
 
 	usage := `usage:
@@ -140,7 +157,20 @@ Options:
 	} else if *method == "GenerateRootMasterKey" {
 		MakeGenerateRootMasterKeyRequest(client, serverAddress, *keyID, *keyType, strings.Split(*operatorCerts, ","), *k)
 	} else if *method == "InjectRootMasterKeyShare" {
-		MakeInjectRootMasterKeyShareRequest(client, serverAddress, *keyID, *share)
+		if *enableEncryption {
+			serverPublicKey, err := cryptoutils.LoadPublicKey(*serverCertFile)
+			if err != nil {
+				log.Fatalf("Failed to load server public key from path: %s", *serverCertFile)
+			}
+			encryptedShare, err := rsa.EncryptPKCS1v15(rand.Reader, serverPublicKey, []byte(*share))
+			if err != nil {
+				log.Fatalf("Failed to encrypt share with server's public key: %v", err.Error())
+			}
+			MakeInjectRootMasterKeyShareRequest(client, serverAddress, *keyID, string(encryptedShare))
+		} else {
+			MakeInjectRootMasterKeyShareRequest(client, serverAddress, *keyID, *share)
+		}
+
 	} else if *method == "Encrypt" {
 		MakeEncryptRequest(client, serverAddress, *keyID, *message)
 	} else if *method == "Decrypt" {
