@@ -1,9 +1,11 @@
 package main
 
 import (
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -21,9 +23,15 @@ import (
 // decrypt received messages.
 var privateKeyBytes []byte
 
+// Same as above, but stored as an *rsa.PrivateKey
+var privateKeyRsa *rsa.PrivateKey
+
 // The enclave application's public key. Shared outside the enclave for clients
 // to use for encrypting messages sent to the enclave.
 var publicKeyDer []byte
+
+// Same as above, but stored as an *rsa.PublicKey
+var publicKeyRsa *rsa.PublicKey
 
 // Map from keyID -> key material for each root master key held in memory.
 var rootMasterKeyMap = make(map[string][]byte)
@@ -355,6 +363,44 @@ func getKeyParams() error {
 	return nil
 }
 
+// Reads the server's public/private key pair from a local file and stores the key
+// material in memory
+func loadKeyPrivateKey() error {
+	privateKeyFile, err := os.Open("credentials/server-key.pem")
+	if err != nil {
+		return err
+	}
+	privateKeyPem, err := ioutil.ReadAll(privateKeyFile)
+	block, _ := pem.Decode(privateKeyPem)
+	privateKeyRsa, _ = x509.ParsePKCS1PrivateKey(block.Bytes)
+	privateKeyBytes = block.Bytes
+	return nil
+}
+
+func loadPublicKey() error {
+	certFile, err := os.Open("credentials/server-cert.pem")
+	if err != nil {
+		return err
+	}
+
+	certPem, err := ioutil.ReadAll(certFile)
+	block, _ := pem.Decode(certPem)
+	cert, err := x509.ParseCertificate(block.Bytes)
+	publicKeyRsa = cert.PublicKey.(*rsa.PublicKey)
+	return nil
+}
+
+func loadServerCredentials() {
+	err := loadKeyPrivateKey()
+	if err != nil {
+		log.Fatalf("Failed to load private key: %v", err.Error())
+	}
+	err = loadPublicKey()
+	if err != nil {
+		log.Fatalf("Failed to load public key: %v", err.Error())
+	}
+}
+
 func main() {
 	router := gin.Default()
 	router.POST("/v1/keys/generate", generateRootMasterKey)
@@ -374,6 +420,7 @@ func main() {
 		TLSConfig: tlsConfig,
 	}
 
+	loadServerCredentials()
 	if getKeyParams() != nil {
 		log.Printf("Error reading root master key parameter file. File may not exist.")
 	}
