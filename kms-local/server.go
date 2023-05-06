@@ -25,11 +25,8 @@ var privateKeyBytes []byte
 // to use for encrypting messages sent to the enclave.
 var publicKeyDer []byte
 
-// Whether or not the KMS has a root master key in memory
-var hasRootMasterKey = false
-
-// The KMS's root master key. Kept in enclave memory.
-var rootMasterKey []byte
+// Map from keyID -> key material for each root master key held in memory.
+var rootMasterKeyMap = make(map[string][]byte)
 
 // The different shares of the root master key, held in an in-memory map of
 // keyId -> operatorId -> share.
@@ -115,14 +112,15 @@ func enclave_GenerateAndSplitRootMasterKey(keyId string, keyType string, k int, 
 		return errors.New("The number of supplied operator identities must be greater than k.")
 	}
 	log.Printf("Received generation request with Shamir parameters n=%v, k=%v", n, k)
+	var keyMaterial []byte
 	if keyType == "AES_256_GCM" {
-		rootMasterKey = cryptoutils.GenerateAes256Key()
-		hasRootMasterKey = true
+		keyMaterial = cryptoutils.GenerateAes256Key()
+		rootMasterKeyMap[keyId] = keyMaterial
 	} else {
 		return errors.New("Received generation request for unsupported key type")
 	}
 
-	shares, err := vaultShamir.Split(rootMasterKey, n, k)
+	shares, err := vaultShamir.Split(keyMaterial, n, k)
 	if err != nil {
 		return err
 	}
@@ -165,7 +163,7 @@ func enclave_GetEnclaveAttestationDocument() enclaveAttestationDocument {
 
 func enclave_EncryptWithRootMasterKey(message string, keyID string) (string, error) {
 	// TODO: Look up the key to use from a map based on keyID
-	key := rootMasterKey
+	key := rootMasterKeyMap[keyID]
 	keyType := rootMasterKeyParams[keyID].KeyType
 	if keyType == "AES_256_GCM" {
 		return enclave_encryptWithRootMasterKeyAes256Gcm(message, key)
@@ -175,8 +173,7 @@ func enclave_EncryptWithRootMasterKey(message string, keyID string) (string, err
 }
 
 func enclave_DecryptWithRootMasterKey(message string, keyID string) (string, error) {
-	// TODO: Look up the key to use from a map based on keyID
-	key := rootMasterKey
+	key := rootMasterKeyMap[keyID]
 	keyType := rootMasterKeyParams[keyID].KeyType
 	if keyType == "AES_256_GCM" {
 		return enclave_decryptWithRootMasterKeyAes256Gcm(message, key)
@@ -204,17 +201,16 @@ func enclave_InjectRootMasterKeyShare(keyID string, keyShare string, operatorCer
 	log.Printf("Current shares: %v", shares)
 
 	// Attempt to reconstruct the root master key if we have at least k shares
-	if !hasRootMasterKey && len(shares) >= rootMasterKeyParams[keyID].K {
+	if rootMasterKeyMap[keyID] == nil && len(shares) >= rootMasterKeyParams[keyID].K {
 		log.Print("Attempting to reconstruct root master key...")
 		log.Printf("Stored k is %v", rootMasterKeyParams[keyID].K)
 		log.Printf("Len shares is %v", len(shares))
-		log.Printf("hasRootMasterKey is %v", hasRootMasterKey)
+		log.Printf("hasRootMasterKey is %v", rootMasterKeyMap[keyID])
 		combinedKey, err := vaultShamir.Combine(shares)
 		if err != nil {
 			return err
 		}
-		rootMasterKey = combinedKey
-		hasRootMasterKey = true
+		rootMasterKeyMap[keyID] = combinedKey
 		log.Print("Successfully reconstructed root master key.")
 	}
 	return nil
