@@ -3,8 +3,10 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -34,9 +36,10 @@ var rootMasterKey []byte
 var rootMasterKeyShares = make(map[string]map[string][]byte)
 
 type rootMasterKeyParamValues struct {
-	N       int    `json:"n"`
-	K       int    `json:"l"`
-	KeyType string `json:"keyType"`
+	N                   int      `json:"n"`
+	K                   int      `json:"l"`
+	KeyType             string   `json:"keyType"`
+	AuthorizedOperators []string `json:"authorizedOperators"`
 }
 
 // A map from a root master key ID to the parameters configured for that key
@@ -56,6 +59,15 @@ type enclaveAttestationDocument struct {
 	// optional DER-encoded key the attstation consumer
 	// can use to encrypt data with
 	PublicKey []byte `json:"publicKey"`
+}
+
+func contains(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }
 
 // Return the root master key share for the specifeid key corresponding to the
@@ -165,18 +177,23 @@ func enclave_decryptWithRootMasterKeyAes256Gcm(ciphertext string, rootMasterKey 
 }
 
 func enclave_InjectRootMasterKeyShare(keyID string, keyShare string, operatorCertificate *x509.Certificate) error {
-	// TODO: Check that the operator identified by operatorCertificate is authorized to inject a key share
 	// TODO: Decrypt keyShare with enclave private key
+	params := rootMasterKeyParams[keyID]
+	operatorCommonName := operatorCertificate.Subject.CommonName
+	if !contains(operatorCommonName, params.AuthorizedOperators) {
+		return errors.New(fmt.Sprintf("Operator %s is not authorized to inject a share for %s", operatorCommonName, keyID))
+	}
 	if rootMasterKeyShares[keyID] == nil {
 		rootMasterKeyShares[keyID] = make(map[string][]byte)
 	}
-	rootMasterKeyShares[keyID][operatorCertificate.Subject.CommonName] = []byte(keyShare)
-	log.Printf("Stored share from operator \"%s\"", operatorCertificate.Subject.CommonName)
+	rootMasterKeyShares[keyID][operatorCommonName] = []byte(keyShare)
+	log.Printf("Stored share from operator \"%s\"", operatorCommonName)
 	shares := make([][]byte, 0, len(rootMasterKeyShares[keyID]))
 	for operatorName := range rootMasterKeyShares[keyID] {
 		shares = append(shares, rootMasterKeyShares[keyID][operatorName])
 	}
 	log.Printf("Current shares: %v", shares)
+
 	// Attempt to reconstruct the root master key if we have at least k shares
 	if !hasRootMasterKey && len(shares) >= rootMasterKeyParams[keyID].K {
 		log.Print("Attempting to reconstruct root master key...")
@@ -188,7 +205,6 @@ func enclave_InjectRootMasterKeyShare(keyID string, keyShare string, operatorCer
 			return err
 		}
 		rootMasterKey = combinedKey
-		log.Printf("Reconstructed master key: %v", combinedKey)
 		hasRootMasterKey = true
 		log.Print("Successfully reconstructed root master key.")
 	}
@@ -320,6 +336,20 @@ func decryptWithRootMasterKey(c *gin.Context) {
 	c.IndentedJSON(http.StatusOK, gin.H{"plaintext": plaintext})
 }
 
+func getKeyParams() error {
+	jsonFile, err := os.Open("key-params.json")
+	if err != nil {
+		return err
+	}
+	contents, err := ioutil.ReadAll(jsonFile)
+	if err != nil {
+		return err
+	}
+	json.Unmarshal(contents, &rootMasterKeyParams)
+	log.Printf("Parsed root master key params: %v", rootMasterKeyParams)
+	return nil
+}
+
 func main() {
 	router := gin.Default()
 	router.POST("/v1/keys/generate", generateRootMasterKey)
@@ -337,6 +367,10 @@ func main() {
 		Addr:      "localhost:8080",
 		Handler:   router,
 		TLSConfig: tlsConfig,
+	}
+
+	if getKeyParams() != nil {
+		log.Printf("Error reading root master key parameter file. File may not exist.")
 	}
 
 	// The certificate in credentials/server-cert.pem is a self-signed cert, so HTTPS
