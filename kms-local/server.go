@@ -363,10 +363,8 @@ func getKeyParams() error {
 	return nil
 }
 
-// Reads the server's public/private key pair from a local file and stores the key
-// material in memory
-func loadKeyPrivateKey() error {
-	privateKeyFile, err := os.Open("credentials/server-key.pem")
+func loadKeyPrivateKey(keyFilePath string) error {
+	privateKeyFile, err := os.Open(keyFilePath)
 	if err != nil {
 		return err
 	}
@@ -377,8 +375,8 @@ func loadKeyPrivateKey() error {
 	return nil
 }
 
-func loadPublicKey() error {
-	certFile, err := os.Open("credentials/server-cert.pem")
+func loadPublicKey(certFilePath string) error {
+	certFile, err := os.Open(certFilePath)
 	if err != nil {
 		return err
 	}
@@ -390,12 +388,14 @@ func loadPublicKey() error {
 	return nil
 }
 
-func loadServerCredentials() {
-	err := loadKeyPrivateKey()
+// Reads the server's public/private key pair from a local file and stores the key
+// material in memory
+func loadServerCredentials(certFilePath string, keyFilePath string) {
+	err := loadKeyPrivateKey(keyFilePath)
 	if err != nil {
 		log.Fatalf("Failed to load private key: %v", err.Error())
 	}
-	err = loadPublicKey()
+	err = loadPublicKey(certFilePath)
 	if err != nil {
 		log.Fatalf("Failed to load public key: %v", err.Error())
 	}
@@ -420,7 +420,7 @@ func main() {
 		TLSConfig: tlsConfig,
 	}
 
-	loadServerCredentials()
+	loadServerCredentials("credentials/server-cert.pem", "credentials/server-key.pem")
 	if getKeyParams() != nil {
 		log.Printf("Error reading root master key parameter file. File may not exist.")
 	}
