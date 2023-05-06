@@ -87,8 +87,6 @@ func enclave_encryptWithRootMasterKeyAes256Gcm(message string, rootMasterKey []b
 }
 
 func enclave_decryptWithRootMasterKeyAes256Gcm(ciphertext string, rootMasterKey []byte) (string, error) {
-	// TODO: Do we need to encrypt a decrypt message with the enclave public key? Maybe it's easier to
-	// just assume every incoming message is encrypted
 	ciphertextBytes := []byte(ciphertext)
 	plaintextBytes, err := cryptoutils.DecryptAes256Gcm(rootMasterKey, ciphertextBytes)
 	return string(plaintextBytes), err
@@ -184,12 +182,17 @@ func enclave_EncryptWithRootMasterKey(message string, keyID string) (string, err
 	}
 }
 
-func enclave_DecryptWithRootMasterKey(message string, keyID string) (string, error) {
+func enclave_DecryptWithRootMasterKey(message string, keyID string, operatorCertificate *x509.Certificate) (string, error) {
 	key := rootMasterKeyMap[keyID]
 	keyType := rootMasterKeyParams[keyID].KeyType
 	if keyType == "AES_256_GCM" {
 		plaintext, err := enclave_decryptWithRootMasterKeyAes256Gcm(message, key)
-		return plaintext, err
+		if !enableEncryption {
+			return plaintext, err
+		}
+		wrappedPlaintext := cryptoutils.EncryptWithPublicKey([]byte(plaintext), operatorCertificate.PublicKey.(*rsa.PublicKey))
+		return string(wrappedPlaintext), nil
+
 	} else {
 		return "", errors.New(fmt.Sprintf("The specified root master key, %s, does not have a supported key type: %s", keyID, keyType))
 	}
@@ -346,7 +349,7 @@ func decryptWithRootMasterKey(c *gin.Context) {
 	if err := c.BindJSON(&req); err != nil {
 		return
 	}
-	plaintext, err := enclave_DecryptWithRootMasterKey(req.Ciphertext, req.KeyID)
+	plaintext, err := enclave_DecryptWithRootMasterKey(req.Ciphertext, req.KeyID, c.Request.TLS.PeerCertificates[0])
 	if err != nil {
 		c.Error(err)
 		return
