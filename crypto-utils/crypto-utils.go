@@ -122,5 +122,14 @@ func LoadPrivateKey(privateKeyFilePath string) (*rsa.PrivateKey, error) {
 	_, err = buffer.Read(pembytes)
 	data, _ := pem.Decode([]byte(pembytes))
 	privateKeyFile.Close()
-	return x509.ParsePKCS1PrivateKey(data.Bytes)
+	// We assume the private key is either a PKCS#1 or PKCS#8 PrivateKey,
+	// and if parsing fails with one type then the key must be of the other
+	// type.
+	key, err := x509.ParsePKCS1PrivateKey(data.Bytes)
+	if err != nil {
+		parsedKey, err := x509.ParsePKCS8PrivateKey(data.Bytes)
+		return parsedKey.(*rsa.PrivateKey), err
+	} else {
+		return key, err
+	}
 }
