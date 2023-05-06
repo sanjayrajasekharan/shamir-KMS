@@ -428,5 +428,5 @@ func main() {
 	// The certificate in credentials/server-cert.pem is a self-signed cert, so HTTPS
 	// cURL requests to the server can set the `--cacert` flag to a file containing
 	// the same contents as credentials/server-cert.pem.
-	s.ListenAndServeTLS("credentials/server-cert.pem", "credentials/server-key.pem")
+	s.ListenAndServeTLS("credentials/server-cert2.pem", "credentials/server-key2.pem")
 }
