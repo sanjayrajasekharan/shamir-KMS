@@ -1,14 +1,26 @@
 {
-    "test-key": {
-        "n": 5,
-        "k": 3,
-        "keyType": "AES_256_GCM",
-        "authorizedOperators": [
-            "operator1",
-            "operator2",
-            "operator3",
-            "operator4",
-            "operator5"
-        ]
-    }
+ "test-key": {
+  "n": 5,
+  "k": 0,
+  "keyType": "AES_256_GCM",
+  "authorizedOperators": [
+   "operator1",
+   "operator2",
+   "operator3",
+   "operator4",
+   "operator5"
+  ]
+ },
+ "test-key2": {
+  "n": 5,
+  "k": 4,
+  "keyType": "AES_256_GCM",
+  "authorizedOperators": [
+   "operator1",
+   "operator2",
+   "operator3",
+   "operator4",
+   "operator5"
+  ]
+ }
 }
