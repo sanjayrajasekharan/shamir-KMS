@@ -159,6 +159,7 @@ func main() {
 	keyType := flag.String("keytype", "", "Optional")
 	enableEncryption = flag.Bool("encryption", false, "Whether or not to encrypt/decrypt messages between server and client (in addition to TLS)")
 	flag.Parse()
+	log.Printf("loaded keyid: %s", *keyID)
 
 	usage := `usage:
 	

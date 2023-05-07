@@ -40,7 +40,7 @@ var rootMasterKeyMap = make(map[string][]byte)
 // keyId -> operatorId -> share.
 var rootMasterKeyShares = make(map[string]map[string][]byte)
 
-var enableEncryption = false
+var enableEncryption = true
 
 type rootMasterKeyParamValues struct {
 	N                   int      `json:"n"`
@@ -204,7 +204,7 @@ func enclave_InjectRootMasterKeyShare(keyID string, keyShare string, operatorCer
 	params := rootMasterKeyParams[keyID]
 	operatorCommonName := operatorCertificate.Subject.CommonName
 	if !contains(operatorCommonName, params.AuthorizedOperators) {
-		return errors.New(fmt.Sprintf("Operator %s is not authorized to inject a share for %s", operatorCommonName, keyID))
+		return errors.New(fmt.Sprintf("Operator %s is not authorized to inject a share for %s, Authorized operators are %v", operatorCommonName, keyID, params.AuthorizedOperators))
 	}
 	if rootMasterKeyShares[keyID] == nil {
 		rootMasterKeyShares[keyID] = make(map[string][]byte)
@@ -212,6 +212,8 @@ func enclave_InjectRootMasterKeyShare(keyID string, keyShare string, operatorCer
 	if !enableEncryption {
 		rootMasterKeyShares[keyID][operatorCommonName] = []byte(keyShare)
 	} else {
+		log.Printf("Key share bytes: %v", []byte(keyShare))
+		log.Printf("Private key: %v", privateKeyRsa)
 		rootMasterKeyShares[keyID][operatorCommonName] = cryptoutils.DecryptWithPrivateKey([]byte(keyShare), privateKeyRsa)
 	}
 
@@ -384,7 +386,14 @@ func loadKeyPrivateKey(keyFilePath string) error {
 	}
 	privateKeyPem, err := ioutil.ReadAll(privateKeyFile)
 	block, _ := pem.Decode(privateKeyPem)
-	privateKeyRsa, _ = x509.ParsePKCS1PrivateKey(block.Bytes)
+	privateKeyRsa, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		parsedKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return err
+		}
+		privateKeyRsa = parsedKey.(*rsa.PrivateKey)
+	}
 	privateKeyBytes = block.Bytes
 	return nil
 }
