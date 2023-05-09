@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -41,10 +42,16 @@ type decryptWithRootMasterKeyRequest struct {
 func generateRootMasterKey(c *gin.Context) {
 	// Parse the request body
 	var req generateRootMasterKeyRequest
+
+	fmt.Println("Received request:", req)
+
 	if err := c.BindJSON(&req); err != nil {
 		c.Error(err)
 		return
 	}
+
+	fmt.Println("Received request:", req)
+
 	var certificates []*x509.Certificate
 	for _, cert := range req.EngineerCerts {
 		parsedCert, err := x509.ParseCertificate([]byte(cert))
