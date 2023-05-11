@@ -69,6 +69,18 @@ func GenerateAndSplitRootMasterKeyWithDefaultParams() {
 	GenerateAndSplitRootMasterKey(keyId, "AES_256_GCM", k, operatorCertificates)
 }
 
+func GetRootMasterKeyParams(keyId string) (int, int, string, error) {
+	params, exists := rootMasterKeyParams[keyId]
+	if !exists {
+		return 0, 0, "", errors.New(fmt.Sprintf("No known key with id: %s", keyId))
+	}
+	return params.K, params.N, params.KeyType, nil
+}
+
+func GetRootMasterKeyShares() map[string]map[string][]byte {
+	return rootMasterKeyShares
+}
+
 // Return the root master key share for the specifeid key corresponding to the
 // operator identified in `operatorCertPem`. Return an error if no root master
 // key with ID `keyID` exists, or if there is no share corresponding to the
