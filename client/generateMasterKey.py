@@ -11,9 +11,10 @@ verify = "cert.pem"
 # Set up command line arguments
 parser = argparse.ArgumentParser(description='Send a POST request with certificates.')
 parser.add_argument('--domain', help='The domain to send the request to.')
-parser.add_argument('--cert_paths', nargs='+', help='The paths to the certificate files.')
-parser.add_argument('--key_type', help='The type of key to generate.')
+# parser.add_argument('--key_type', help='The type of key to generate.')
 parser.add_argument('--key_id', help='The ID of the key to generate.')
+parser.add_argument('--k', help='k value for the key.')
+parser.add_argument('--cert_paths', nargs='+', help='The paths to the certificate files.')
 
 args = parser.parse_args()
 
@@ -24,13 +25,13 @@ url = f"https://{args.domain}:8080/v1/keys/generate"
 engineerCerts = []
 for path in args.cert_paths:
     with open(path, "rb") as f:
-        engineerCerts.append(base64.b64encode(f.read()).decode())
+        engineerCerts.append(f.read().decode("utf-8"))
 
 # Define the payload for the request
 payload = {
-    "keyType": args.key_type,
+    "keyType": "AES_256_GCM",
     "keyID": args.key_id,
-    "k": 4,
+    "k": int(args.k),
     "engineerCerts": engineerCerts,
 }
 
