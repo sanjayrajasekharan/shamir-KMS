@@ -10,8 +10,11 @@ verify = "cert.pem"
 
 # Set up command line arguments
 parser = argparse.ArgumentParser(description='Send a POST request with certificates.')
-parser.add_argument('domain', help='The domain to send the request to.')
-parser.add_argument('cert_paths', nargs='+', help='The paths to the certificate files.')
+parser.add_argument('--domain', help='The domain to send the request to.')
+parser.add_argument('--cert_paths', nargs='+', help='The paths to the certificate files.')
+parser.add_argument('--key_type', help='The type of key to generate.')
+parser.add_argument('--key_id', help='The ID of the key to generate.')
+
 args = parser.parse_args()
 
 # Define the URL for the request
@@ -21,18 +24,18 @@ url = f"https://{args.domain}:8080/v1/keys/generate"
 engineerCerts = []
 for path in args.cert_paths:
     with open(path, "rb") as f:
-        engineerCerts.append(f.read())
+        engineerCerts.append(base64.b64encode(f.read()).decode())
 
 # Define the payload for the request
 payload = {
-    "keyType": "AES_256_GCM",
-    "keyID": "test-key2",
+    "keyType": args.key_type,
+    "keyID": args.key_id,
     "k": 4,
     "engineerCerts": engineerCerts,
 }
 
 # Send the request
-response = requests.post(url, headers=headers, data=json.dumps(payload), cert=cert, verify=verify)
+response = requests.post(url, headers=headers, data=json.dumps(payload), cert=cert, verify=False)
 
 # Print the response
 print(response.status_code)
